@@ -5,4 +5,4 @@ log_model
 runs
 *.idea
 coco128
-.ipynb_checkpoints
+*.ipynb_checkpoints
