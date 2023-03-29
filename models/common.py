@@ -2098,7 +2098,7 @@ class CA(nn.Module):
     model performance, but they generally neglect the positional information, which is important for generating spatially selective attention maps. In this paper, we propose a
     novel attention mechanism for mobile iscyy networks by embedding positional information into channel attention, which
     we call “coordinate attention”. Unlike channel attention
-    that transforms a feature tensor to a single feature vector iscyy via 2D global pooling, the coordinate attention factorizes channel attention into two 1D feature encoding 
+    that transforms a feature tensor to a single feature vector iscyy via 2D global pooling, the coordinate attention factorizes channel attention into two 1D feature encoding
     processes that aggregate features along the two spatial directions, respectively
     '''
     def __init__(self, inp, oup, reduction=32):
@@ -2109,14 +2109,14 @@ class CA(nn.Module):
         self.conv1 = nn.Conv2d(inp, mip, kernel_size=1, stride=1, padding=0)
         self.bn1 = nn.BatchNorm2d(mip)
         self.act = h_swish()
-        
+
         self.conv_h = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
         self.conv_w = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
-        
+
 
     def forward(self, x):
         identity = x
-        
+
         n,c,h,w = x.size()
         pool_h = nn.AdaptiveAvgPool2d((h, 1))
         pool_w = nn.AdaptiveAvgPool2d((1, w))
@@ -2126,8 +2126,8 @@ class CA(nn.Module):
         y = torch.cat([x_h, x_w], dim=2)
         y = self.conv1(y)
         y = self.bn1(y)
-        y = self.act(y) 
-        
+        y = self.act(y)
+
         x_h, x_w = torch.split(y, [h, w], dim=2)
         x_w = x_w.permute(0, 1, 3, 2)
 
@@ -2136,38 +2136,35 @@ class CA(nn.Module):
 
         out = identity * a_w * a_h
 
-        return out   
-    
+        return out
+
 ##### end of CA(Coordinate attention) #####
 
 
 ##### FasterNet #####
 
 class PConv(nn.Module):
-    # PConv Block
-    def __init__(self,dim, n_div,forward= "split_cat",kernel_size=3):
+    # PWConv Block
+    def __init__(self,
+                 dim=int,
+                 n_div=int, # 设置为4
+                 forward= "split_cat",
+                 kernel_size=3,
+                 g=False): # g=True为调用PWconv, g=False为PConv
         super().__init__()
         self.dim_conv = dim // n_div
         self.dim_untouched = dim - self.dim_conv
-        self.conv=nn.Conv2d(
-            self.dim_conv, 
-            self.dim_conv, 
-            kernel_size, 
-            stride=1,
-            padding=(kernel_size -1) // 2,
-            bias=False)
-        
+        self.g1 = int(dim / 4) if g is True else 1
+        self.conv=nn.Conv2d(self.dim_conv, self.dim_conv, kernel_size, stride=1,padding=(kernel_size -1) // 2, groups = self.g1, bias=False)
         if forward == "slicing":
-            self.forward = self.forward_slicing 
+            self.forward = self.forward_slicing
         elif forward == "split_cat":
             self.forward = self.forward_split_cat
         else:
             raise NotImplementedError
-
     def forward_slicing(self, x):
         x[:, :self.dim_conv, :, :] = self.conv(x[:, :self.dim_conv, :, :])
         return x
-    
     def forward_split_cat(self, x):
         x1, x2 = torch.split(x,[self.dim_conv, self.dim_untouched], dim=1)
         x1 = self.conv(x1)
@@ -2179,7 +2176,10 @@ class FasterNetBlock(nn.Module):
     def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
+        # version1
         self.cv1 = PConv(c1, 2, "split_cat", 3)
+        # version2
+        # self.cv1 = PConv(c1, 4, "split_cat", 3)
         self.cv2 = Conv(c1, c_, 1, 1)
         self.cv3 = Conv(c_, c2, 1, 1, g=g)
         self.add = shortcut
